@@ -1,0 +1,4 @@
+#ifndef _UART_ATMEGAXXM1C1_H_
+#define _UART_ATMEGAXXM1C1_H_
+
+#endif /* _UART_ATMEGAXXM1C1_H_ */
