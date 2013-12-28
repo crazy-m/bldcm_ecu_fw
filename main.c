@@ -148,7 +148,7 @@ int main(void)
 
 			case CAN_MOTOR_SPEED_SET:
 				speed	=	((int16_t)(msg_cmd.data[1])<<8) + (int16_t)(msg_cmd.data[0]);
-				mc_speed_set(speed);
+				mc_rpm_set(speed);
 				#if DEBUG_CAN
 				printf_P(PSTR("motor speed set: %drpm"),speed);
 				#endif
@@ -160,7 +160,7 @@ int main(void)
 				msg_response.ide=0;
 				msg_response.rtr=0;
 				msg_response.dlc=2;
-				speed = mc_speed_get();
+				speed = mc_rpm_get();
 				msg_response.data[1]=(speed>>8);
 				msg_response.data[0]=(uint8_t)(speed);
 				while(can_msg_tx(&msg_response)!=CAN_MSG_ACCEPTED);
@@ -208,7 +208,7 @@ int main(void)
 
 			case CAN_MOTOR_ANGLE_SET:
 				angle	=	((int16_t)(msg_cmd.data[1])<<8) + (int16_t)(msg_cmd.data[0]);
-				mc_angle_set(angle);
+				mc_rev_set(angle);
 				#if DEBUG_CAN
 				printf_P(PSTR("motor angle set: %d"),angle);
 				#endif

@@ -5,7 +5,7 @@
 
 #include "adc.h"
 
-static volatile uint16_t adc[2];
+static volatile uint16_t adc_ch8;
 
 void adc_init(void)
 {
@@ -37,13 +37,16 @@ void adc_init(void)
 
 uint16_t adc_get_channel(adc_channel_t channel)
 {
-	uint8_t save_ADMUX,save_ADCSRB;
+	uint8_t save_ADMUX, save_ADCSRA, save_ADCSRB;
 
 	save_ADMUX	=	ADMUX;
+	save_ADCSRA	=	ADCSRA;
 	save_ADCSRB	=	ADCSRB;
 
-	ADMUX	&=	0xE0;
+	ADMUX	= _BV(REFS0);
 	ADMUX	|=	channel;
+	ADCSRA	= _BV(ADEN) | _BV(ADIF) | _BV(ADPS2) | _BV(ADPS1);
+	ADCSRB	= _BV(AREFEN);
 
 	if(channel==ADC_CHANNEL_TEMP)
 	{
@@ -56,18 +59,19 @@ uint16_t adc_get_channel(adc_channel_t channel)
 	ADCSRA	|=	_BV(ADIF);
 
 	ADMUX	=	save_ADMUX;
+	ADCSRA	=	save_ADCSRA;
 	ADCSRB	=	save_ADCSRB;
 
 	return ADC;
 }
 
-uint16_t adc_get_current(void)
+uint16_t adc_get_ch8(void)
 {
-	return adc[0];
+	return adc_ch8;
 }
 
 ISR(ADC_vect)
 {
-	adc[0]	=	ADC;
+	adc_ch8	=	ADC;
 	//ADCSRA	|= _BV(ADSC);
 }

@@ -10,7 +10,7 @@ double	pid_controller(const double* input, double* output, pid_data_t* pid)
 	double ret, tmp;
 	double p_term,i_term,d_term;
 
-	error = input - output;
+	//error = input - output;
 	error = *input - *output;
 
 	// P

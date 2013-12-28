@@ -16,33 +16,31 @@
 #include "pid.h"
 #include "psc.h"
 
-static volatile uint16_t		mc_hall_speed_ticks		=	0;
-static volatile	double			mc_hall_pos_ticks		=	0;
+static 			mc_mode_t		mc_mode					=	MC_MODE_POSITION;
+
+static volatile uint16_t		mc_hall_rpm_ticks		=	0;
+static volatile	int32_t			mc_hall_rev_ticks		=	0;
 
 static volatile uint8_t			mc_hall_last_input		=	0xFF;
 static volatile mc_direction_t	mc_hall_dir				=	MC_DIR_CW;
 static const	uint8_t			mc_hall_states_next[8]	=	{0xFF,0x05,0x03,0x01,0x06,0x04,0x02,0xFF};
 static const	uint8_t			mc_hall_states_prev[8]	=	{0xFF,0x03,0x06,0x02,0x05,0x01,0x04,0xFF};
 
-static volatile	mc_direction_t	mc_dir_ref				=	MC_DIR_CW;
 static volatile	mc_direction_t	mc_dir_now				=	MC_DIR_CW;
 
-static volatile	uint16_t		mc_speed_ref			=	0;
-static volatile	uint16_t		mc_speed_now			=	0;
+static volatile	int16_t			mc_rpm_ref			=	0;
+static volatile	uint16_t		mc_rpm_now			=	0;
+static volatile double			mc_rpm_last			=	0;
+static volatile	double			mc_rpm_filter_last	=	0;
 
-static volatile	int16_t			mc_angle_ref			=	0;
-static volatile	double			mc_angle_now			=	0;
-
-static volatile double			mc_speed_last			=	0;
-static volatile	double			mc_speed_filtered_last	=	0;
-static volatile double			mc_current_last			=	0;
-static volatile	double			mc_current_filtered_last=	0;
+static volatile	int16_t			mc_rev_ref			=	0;
+static volatile	int32_t			mc_rev_now			=	0;
 
 static			pid_data_t		pid_speed;
 static volatile	double			pid_speed_out;
 
-static			pid_data_t		pid_angle;
-static volatile	double			pid_angle_out;
+static			pid_data_t		pid_position;
+static volatile	double			pid_position_out;
 
 static			void			mc_hall_sensors_irq	(void);
 
@@ -75,13 +73,13 @@ void mc_init(void)
 	pid_speed.Ki			=	PID_SPEED_KI;
 	pid_speed.Kd			=	PID_SPEED_KD;
 
-	pid_angle.ErrorMax		=	PID_ANGLE_KP*MOTOR_MAX_SPEED;
-	pid_angle.IntSumMax		=	PID_ANGLE_KP*MOTOR_MAX_SPEED/(PID_ANGLE_KI+1);
-	pid_angle.IntSum		=	0;
-	pid_angle.OutputLast	=	0;
-	pid_angle.Kp			=	PID_ANGLE_KP;
-	pid_angle.Ki			=	PID_ANGLE_KI;
-	pid_angle.Kd			=	PID_ANGLE_KD;
+	pid_position.ErrorMax	=	PID_ANGLE_KP*MOTOR_MAX_SPEED;
+	pid_position.IntSumMax	=	PID_ANGLE_KP*MOTOR_MAX_SPEED/(PID_ANGLE_KI+1);
+	pid_position.IntSum		=	0;
+	pid_position.OutputLast	=	0;
+	pid_position.Kp			=	PID_ANGLE_KP;
+	pid_position.Ki			=	PID_ANGLE_KI;
+	pid_position.Kd			=	PID_ANGLE_KD;
 
 	ata6844_enabled(0);
 	ata6844_coast(1);
@@ -104,12 +102,14 @@ void mc_run(uint8_t run)
 		psc_run(0);
 		timer0_stop();
 		//timer1_stop();
-		mc_speed_ref=0;
-		mc_speed_now=0;
-		mc_angle_ref=0;
-		mc_angle_now=0;
-		mc_hall_pos_ticks=0;
+		mc_rpm_ref=0;
+		mc_rpm_now=0;
+		mc_rev_ref=0;
+		mc_rev_now=0;
+		mc_hall_rev_ticks=0;
 	}
+	pid_speed.IntSum=0;
+	pid_position.IntSum=0;
 }
 
 void mc_coast(void)
@@ -117,41 +117,37 @@ void mc_coast(void)
 	ata6844_coast(1);
 }
 
-void mc_speed_set(int16_t speed)
+void mc_rpm_set(int16_t speed)
 {
-	/*
-	if(speed<0)
-	{
-		mc_dir_ref	=	MC_DIR_CCW;
-		speed		=	-speed;
-	}else{
-		mc_dir_ref	=	MC_DIR_CW;
-	}
-	*/
-
 	if (speed>MOTOR_MAX_SPEED)	speed = MOTOR_MAX_SPEED;
 	if(speed<-MOTOR_MAX_SPEED)	speed = -MOTOR_MAX_SPEED;
 
-	//mc_dir_now		=	mc_dir_ref;
-	mc_speed_ref	=	speed;
+	mc_rpm_ref	=	speed;
+	mc_mode		=	MC_MODE_SPEED;
 }
 
-int16_t mc_speed_get(void)
+int16_t mc_rpm_get(void)
 {
 	if(mc_hall_dir==MC_DIR_CCW)
-		return -mc_speed_now;
-	return mc_speed_now;
+		return -mc_rpm_now;
+	return mc_rpm_now;
 }
 
-void mc_angle_set(int16_t angle)
+void mc_rev_set(int16_t revs)
 {
-	mc_angle_ref	=	angle;
+	mc_rev_ref	=	revs;
+	mc_mode		=	MC_MODE_POSITION;
+}
+
+int16_t mc_rev_get(void)
+{
+	return mc_rev_now;
 }
 
 uint16_t mc_current_get(void)
 {
 	uint32_t current;
-	current	= ( (uint32_t)(adc_get_current())*MOTOR_MAX_CURRENT*1000/1023 );
+	current	= ( (uint32_t)(adc_get_ch8())*MOTOR_MAX_CURRENT*1000/1023 );
 	return current;
 }
 
@@ -165,7 +161,7 @@ uint8_t mc_voltage_get(void)
 int8_t mc_temp_get(void)
 {
 	int32_t temp;
-	// (ADC*(IntRefVol[mV]/Res[1])-ZeroDeg[mV])/VpD[mV/degC)
+	// (ADC*(IntRefVol[mV]/Res[1])-ZeroDeg[mV])/VpD[mV/degC]
 	temp	= (int32_t)((double)(adc_get_channel(ADC_CHANNEL_TEMP))*(2560.0000/1023.0000)-699.6923)/2.4923;
 	return (int8_t)temp;
 }
@@ -211,18 +207,16 @@ static void mc_hall_sensors_irq(void)
 	hall_sensors_input	=	hall_sensors_input>>5;
 
 	hall_sensors_tmp	=	mc_hall_last_input%8;
+	mc_hall_last_input	=	hall_sensors_input;
 
 	if(hall_sensors_input == *(mc_hall_states_next+hall_sensors_tmp))
 	{
 		mc_hall_dir = MC_DIR_CW;
-		mc_hall_pos_ticks += 1;
+		mc_hall_rev_ticks += 1;
 	}else if(hall_sensors_input == *(mc_hall_states_prev+hall_sensors_tmp)){
 		mc_hall_dir = MC_DIR_CCW;
-		mc_hall_pos_ticks -= 1;
+		mc_hall_rev_ticks -= 1;
 	}
-
-	mc_angle_now		=	mc_hall_pos_ticks;
-	mc_hall_last_input	=	hall_sensors_input;
 
 	switch(mc_dir_now)
 	{
@@ -283,63 +277,60 @@ static void mc_hall_sensors_irq(void)
 
 ISR(PCINT2_vect)
 {
-	mc_hall_speed_ticks++;
+	mc_hall_rpm_ticks++;
 	mc_hall_sensors_irq();
 }
 
 ISR(TIMER0_COMPA_vect)
 {
-	double		mc_speed_filtered;
-	double		mc_speed_tmp;
-	double		mc_angle_tmp;
+	double		mc_rpm_filter;
+	double		mc_rpm_tmp;
+	double		mc_rev_tmp;
+	double		mc_rev_hall;
 
-	mc_speed_tmp				=	(double)(mc_hall_speed_ticks)*3750.00/48.00;
-	mc_hall_speed_ticks			=	0;
+	mc_rpm_tmp				=	(double)(mc_hall_rpm_ticks)*3750.00/48.00;
+	mc_hall_rpm_ticks		=	0;
 
 	// Digital filter for speed calc
-	mc_speed_filtered		=	0.8519*mc_speed_filtered_last + 0.07407*mc_speed_tmp + 0.07407*mc_speed_last;
-	mc_speed_last			=	mc_speed_tmp;
-	mc_speed_filtered_last	=	mc_speed_filtered;
-	mc_speed_now			=	(int16_t)(mc_speed_filtered);
+	mc_rpm_filter		=	0.8519*mc_rpm_filter_last + 0.07407*mc_rpm_tmp + 0.07407*mc_rpm_last;
+	mc_rpm_last			=	mc_rpm_tmp;
+	mc_rpm_filter_last	=	mc_rpm_filter;
+	mc_rpm_now			=	(int16_t)(mc_rpm_filter);
 
+	if(mc_mode==MC_MODE_POSITION)
+	{
+		// P position controller
 
-	mc_angle_tmp		=	(double)(mc_angle_ref)*24.00;
-	pid_angle_out		=	pid_controller(&mc_angle_tmp,&mc_angle_now,&pid_angle);
+		mc_rev_tmp		=	(double)(mc_rev_ref)*24.00;
+		mc_rev_hall		=	(double)(mc_hall_rev_ticks);
+		mc_rev_now		=	(int32_t)(mc_rev_hall/24.00);
 
+		pid_position_out	=	pid_controller(&mc_rev_tmp, &mc_rev_hall, &pid_position);
 
-	if(pid_angle_out<0)
+		if(pid_position_out<0)
+		{
+			mc_dir_now	=	MC_DIR_CCW;
+			pid_position_out = -pid_position_out;
+		}else{
+			mc_dir_now	=	MC_DIR_CW;
+		}
+
+		// PI speed controller
+		pid_speed_out = pid_controller(&pid_position_out, &mc_rpm_filter, &pid_speed);
+	}else{
+		// PI speed controller
+		mc_rpm_tmp = (double)mc_rpm_ref;
+		pid_speed_out = pid_controller(&mc_rpm_tmp, &mc_rpm_filter, &pid_speed);
+	}
+
+	if(pid_speed_out<0)
 	{
 		mc_dir_now	=	MC_DIR_CCW;
-		pid_angle_out = -pid_angle_out;
+		pid_speed_out = -pid_speed_out;
 	}else{
 		mc_dir_now	=	MC_DIR_CW;
 	}
 
-	// PID speed controller
-	//mc_speed_tmp = (double)mc_speed_ref;
-	//pid_speed_out = pid_controller(&mc_speed_tmp, &mc_speed_filtered, &pid_speed);
-	pid_speed_out = pid_controller(&pid_angle_out, &mc_speed_filtered, &pid_speed);
-
-	/*
-	if(mc_dir_ref==MC_DIR_CW)
-	{
-		if(pid_speed_out<0)
-		{
-			mc_dir_now	=	MC_DIR_CCW;
-			pid_speed_out = -pid_speed_out;
-		}else{
-			mc_dir_now	=	MC_DIR_CW;
-		}
-	}else{
-		if(pid_speed_out<0)
-		{
-			mc_dir_now	=	MC_DIR_CW;
-			pid_speed_out = -pid_speed_out;
-		}else{
-			mc_dir_now	=	MC_DIR_CCW;
-		}
-	}
-	*/
 	pid_speed_out = pid_speed_out*PSC_DUTY_MAX/MOTOR_MAX_SPEED;
 
 	psc_set_dutycycle( (int16_t)(pid_speed_out) );
