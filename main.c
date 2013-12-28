@@ -13,6 +13,8 @@
 #include "mc.h"
 #include "uart.h"
 
+#include <util/delay.h>
+
 static void board_init(void);
 
 int main(void)
