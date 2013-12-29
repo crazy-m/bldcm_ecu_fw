@@ -22,25 +22,25 @@ static volatile uint16_t		mc_hall_rpm_ticks		=	0;
 static volatile	int32_t			mc_hall_rev_ticks		=	0;
 
 static volatile uint8_t			mc_hall_last_input		=	0xFF;
-static volatile mc_direction_t	mc_hall_dir				=	MC_DIR_CW;
 static const	uint8_t			mc_hall_states_next[8]	=	{0xFF,0x05,0x03,0x01,0x06,0x04,0x02,0xFF};
 static const	uint8_t			mc_hall_states_prev[8]	=	{0xFF,0x03,0x06,0x02,0x05,0x01,0x04,0xFF};
 
+static volatile mc_direction_t	mc_hall_dir				=	MC_DIR_CW;
 static volatile	mc_direction_t	mc_dir_now				=	MC_DIR_CW;
 
-static volatile	int16_t			mc_rpm_ref			=	0;
-static volatile	uint16_t		mc_rpm_now			=	0;
-static volatile double			mc_rpm_last			=	0;
-static volatile	double			mc_rpm_filter_last	=	0;
+static volatile	int16_t			mc_rpm_ref				=	0;
+static volatile	uint16_t		mc_rpm_now				=	0;
+static volatile double			mc_rpm_last				=	0;
+static volatile	double			mc_rpm_filter_last		=	0;
 
-static volatile	int16_t			mc_rev_ref			=	0;
-static volatile	int32_t			mc_rev_now			=	0;
+static volatile	int16_t			mc_rev_ref				=	0;
+static volatile	int32_t			mc_rev_now				=	0;
 
 static			pid_data_t		pid_speed;
-static volatile	double			pid_speed_out;
+static 			double			pid_speed_out			=	0;
 
 static			pid_data_t		pid_position;
-static volatile	double			pid_position_out;
+static 			double			pid_position_out		=	0;
 
 static			void			mc_hall_sensors_irq	(void);
 
@@ -109,7 +109,9 @@ void mc_run(uint8_t run)
 		mc_hall_rev_ticks=0;
 	}
 	pid_speed.IntSum=0;
+	pid_speed.OutputLast=0;
 	pid_position.IntSum=0;
+	pid_position.OutputLast=0;
 }
 
 void mc_coast(void)
@@ -291,16 +293,15 @@ ISR(TIMER0_COMPA_vect)
 	mc_rpm_tmp				=	(double)(mc_hall_rpm_ticks)*3750.00/48.00;
 	mc_hall_rpm_ticks		=	0;
 
-	// Digital filter for speed calc
+	// Digital filter for speed calc using Hall sensors
 	mc_rpm_filter		=	0.8519*mc_rpm_filter_last + 0.07407*mc_rpm_tmp + 0.07407*mc_rpm_last;
 	mc_rpm_last			=	mc_rpm_tmp;
 	mc_rpm_filter_last	=	mc_rpm_filter;
-	mc_rpm_now			=	(int16_t)(mc_rpm_filter);
+	mc_rpm_now			=	(uint16_t)(mc_rpm_filter);
 
 	if(mc_mode==MC_MODE_POSITION)
 	{
 		// P position controller
-
 		mc_rev_tmp		=	(double)(mc_rev_ref)*24.00;
 		mc_rev_hall		=	(double)(mc_hall_rev_ticks);
 		mc_rev_now		=	(int32_t)(mc_rev_hall/24.00);

@@ -29,17 +29,17 @@ void psc_init(void)
 
 	// initial values for psc registers
 	POCR0RA	=	1;
-	POCR1RA	=	0x0000;
-	POCR2RA	=	0x0000;
+	POCR1RA	=	0;
+	POCR2RA	=	0;
 
 	POCR_RB	=	PSC_DUTY_MAX;
 
-	POCR0SA	=	0x0000;
-	POCR1SA	=	0x0000;
-	POCR2SA	=	0x0000;
-	POCR0SB	=	0x0000;
-	POCR1SB	=	0x0000;
-	POCR2SB	=	0x0000;
+	POCR0SA	=	0;
+	POCR1SA	=	0;
+	POCR2SA	=	0;
+	POCR0SB	=	0;
+	POCR1SB	=	0;
+	POCR2SB	=	0;
 
 	PCNF	|=	_BV(POPB);	// PSC outputs B are active high
 
