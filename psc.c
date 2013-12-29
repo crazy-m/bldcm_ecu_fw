@@ -52,7 +52,8 @@ void psc_init(void)
 	PMIC1	|=	_BV(POVEN1);
 	PMIC2	|=	_BV(POVEN2);
 
-	//PSYNC	=	_BV(PSYNC00);
+	// Send signal on match with OCRnRA (during counting up of PSC)
+	PSYNC	=	_BV(PSYNC00);
 }
 
 void psc_run(uint8_t run)
@@ -79,5 +80,4 @@ void psc_set_dutycycle(int16_t dutycycle)
 	POCR1SA	=	dutycycle;
 	POCR2SB	=	0;
 }
-
 #endif

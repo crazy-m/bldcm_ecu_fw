@@ -21,18 +21,11 @@ void adc_init(void)
 	DDRC	&= ~_BV(PC5) & ~_BV(PC4);
 	PORTC	&= ~_BV(PC5) & ~_BV(PC4);
 
-	/*
-	ADMUX	= _BV(REFS0) | _BV(MUX4) | _BV(MUX1); // set GND
-	ADCSRA	= _BV(ADEN) | _BV(ADIF) | _BV(ADPS2) | _BV(ADPS1); // set ADC Enable, Int. Flag and prescale F_CPU/64
-	ADCSRB	= _BV(AREFEN);
-	*/
-
 	ADMUX	= _BV(REFS0) | _BV(MUX3); // set CH8
 	ADCSRA	= _BV(ADEN) |  _BV(ADATE) |  _BV(ADIE) | _BV(ADPS2) | _BV(ADPS1) | _BV(ADPS0); // set ADC Enable, Int. Flag and prescale F_CPU/64
 	ADCSRB	= _BV(AREFEN) | _BV(ADTS2) | _BV(ADTS1) | _BV(ADTS0);
 
 	DIDR1 = _BV(ADC9D) | _BV(ADC8D);
-
 }
 
 uint16_t adc_get_channel(adc_channel_t channel)

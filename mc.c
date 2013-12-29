@@ -18,7 +18,7 @@
 
 static 			mc_mode_t		mc_mode					=	MC_MODE_POSITION;
 
-static volatile uint16_t		mc_hall_rpm_ticks		=	0;
+static volatile int16_t			mc_hall_rpm_ticks		=	0;
 static volatile	int32_t			mc_hall_rev_ticks		=	0;
 
 static volatile uint8_t			mc_hall_last_input		=	0xFF;
@@ -29,12 +29,12 @@ static volatile mc_direction_t	mc_hall_dir				=	MC_DIR_CW;
 static volatile	mc_direction_t	mc_dir_now				=	MC_DIR_CW;
 
 static volatile	int16_t			mc_rpm_ref				=	0;
-static volatile	uint16_t		mc_rpm_now				=	0;
+static volatile	int16_t			mc_rpm_now				=	0;
 static volatile double			mc_rpm_last				=	0;
 static volatile	double			mc_rpm_filter_last		=	0;
 
 static volatile	int16_t			mc_rev_ref				=	0;
-static volatile	int32_t			mc_rev_now				=	0;
+static volatile	int16_t			mc_rev_now				=	0;
 
 static			pid_data_t		pid_speed;
 static 			double			pid_speed_out			=	0;
@@ -68,7 +68,7 @@ void mc_init(void)
 	pid_speed.ErrorMax		=	PID_SPEED_KP*MOTOR_MAX_SPEED;
 	pid_speed.IntSumMax		=	PID_SPEED_KP*MOTOR_MAX_SPEED/(PID_SPEED_KI+1);
 	pid_speed.IntSum		=	0;
-	pid_speed.OutputLast	=	0;
+	pid_speed.FeedbackLast	=	0;
 	pid_speed.Kp			=	PID_SPEED_KP;
 	pid_speed.Ki			=	PID_SPEED_KI;
 	pid_speed.Kd			=	PID_SPEED_KD;
@@ -76,7 +76,7 @@ void mc_init(void)
 	pid_position.ErrorMax	=	PID_ANGLE_KP*MOTOR_MAX_SPEED;
 	pid_position.IntSumMax	=	PID_ANGLE_KP*MOTOR_MAX_SPEED/(PID_ANGLE_KI+1);
 	pid_position.IntSum		=	0;
-	pid_position.OutputLast	=	0;
+	pid_position.FeedbackLast	=	0;
 	pid_position.Kp			=	PID_ANGLE_KP;
 	pid_position.Ki			=	PID_ANGLE_KI;
 	pid_position.Kd			=	PID_ANGLE_KD;
@@ -109,9 +109,9 @@ void mc_run(uint8_t run)
 		mc_hall_rev_ticks=0;
 	}
 	pid_speed.IntSum=0;
-	pid_speed.OutputLast=0;
+	pid_speed.FeedbackLast=0;
 	pid_position.IntSum=0;
-	pid_position.OutputLast=0;
+	pid_position.FeedbackLast=0;
 }
 
 void mc_coast(void)
@@ -122,7 +122,7 @@ void mc_coast(void)
 void mc_rpm_set(int16_t speed)
 {
 	if (speed>MOTOR_MAX_SPEED)	speed = MOTOR_MAX_SPEED;
-	if(speed<-MOTOR_MAX_SPEED)	speed = -MOTOR_MAX_SPEED;
+	if (speed<-MOTOR_MAX_SPEED)	speed = -MOTOR_MAX_SPEED;
 
 	mc_rpm_ref	=	speed;
 	mc_mode		=	MC_MODE_SPEED;
@@ -130,8 +130,6 @@ void mc_rpm_set(int16_t speed)
 
 int16_t mc_rpm_get(void)
 {
-	if(mc_hall_dir==MC_DIR_CCW)
-		return -mc_rpm_now;
 	return mc_rpm_now;
 }
 
@@ -150,14 +148,14 @@ uint16_t mc_current_get(void)
 {
 	uint32_t current;
 	current	= ( (uint32_t)(adc_get_ch8())*MOTOR_MAX_CURRENT*1000/1023 );
-	return current;
+	return (uint16_t)current;
 }
 
 uint8_t mc_voltage_get(void)
 {
 	uint32_t voltage;
 	voltage	= ( (uint32_t)(adc_get_channel(ADC_CHANNEL_9))*MOTOR_MAX_VOLTAGE/1023 );
-	return voltage;
+	return (uint8_t)voltage;
 }
 
 int8_t mc_temp_get(void)
@@ -293,35 +291,30 @@ ISR(TIMER0_COMPA_vect)
 	mc_rpm_tmp				=	(double)(mc_hall_rpm_ticks)*3750.00/48.00;
 	mc_hall_rpm_ticks		=	0;
 
+	if(mc_hall_dir==MC_DIR_CCW)
+		mc_rpm_tmp=-mc_rpm_tmp;
+		
 	// Digital filter for speed calc using Hall sensors
 	mc_rpm_filter		=	0.8519*mc_rpm_filter_last + 0.07407*mc_rpm_tmp + 0.07407*mc_rpm_last;
 	mc_rpm_last			=	mc_rpm_tmp;
 	mc_rpm_filter_last	=	mc_rpm_filter;
-	mc_rpm_now			=	(uint16_t)(mc_rpm_filter);
+	mc_rpm_now			=	(int16_t)(mc_rpm_filter);
 
 	if(mc_mode==MC_MODE_POSITION)
 	{
 		// P position controller
 		mc_rev_tmp		=	(double)(mc_rev_ref)*24.00;
 		mc_rev_hall		=	(double)(mc_hall_rev_ticks);
-		mc_rev_now		=	(int32_t)(mc_rev_hall/24.00);
+		mc_rev_now		=	(int16_t)(mc_rev_hall/24.00);
 
 		pid_position_out	=	pid_controller(&mc_rev_tmp, &mc_rev_hall, &pid_position);
 
-		if(pid_position_out<0)
-		{
-			mc_dir_now	=	MC_DIR_CCW;
-			pid_position_out = -pid_position_out;
-		}else{
-			mc_dir_now	=	MC_DIR_CW;
-		}
-
 		// PI speed controller
-		pid_speed_out = pid_controller(&pid_position_out, &mc_rpm_filter, &pid_speed);
+		pid_speed_out		=	pid_controller(&pid_position_out, &mc_rpm_filter, &pid_speed);
 	}else{
 		// PI speed controller
-		mc_rpm_tmp = (double)mc_rpm_ref;
-		pid_speed_out = pid_controller(&mc_rpm_tmp, &mc_rpm_filter, &pid_speed);
+		mc_rpm_tmp			=	(double)mc_rpm_ref;
+		pid_speed_out		=	pid_controller(&mc_rpm_tmp, &mc_rpm_filter, &pid_speed);
 	}
 
 	if(pid_speed_out<0)

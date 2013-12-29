@@ -13,97 +13,24 @@
 #include "mc.h"
 #include "uart.h"
 
-#include <util/delay.h>
-
 static void board_init(void);
 
 int main(void)
 {
 	can_message_t	msg_cmd;
 	can_message_t	msg_response;
-	can_message_t	msg_position;
-	int8_t			temp;
-
+	
 	int16_t			speed, angle;
 	uint16_t		current;
 	uint8_t			voltage;
+	int8_t			temp;
 
 	board_init();
 
 	#if DEBUG_ME
 	printf_P(PSTR("UART: 115200,8,n,1\n\r"));
 	#endif
-/*
-	while(1)
-	{
-		msg_cmd.id			=	CAN_BASE_ID;
-		msg_cmd.mask		=	0x000007f0;
-		msg_cmd.ide			=	0;
-		msg_cmd.rtr			=	1;
-		msg_cmd.dlc			=	8;
-
-		msg_position.id		=	CAN_MOTOR_POS_SET;
-		msg_position.mask	=	0x000007ff;
-		msg_position.ide	=	0;
-		msg_position.rtr	=	0;
-		msg_position.dlc	=	2;
-
-		while(can_msg_rx(&msg_cmd,0)!=CAN_MSG_ACCEPTED);
-		_delay_ms(1);
-		if(can_msg_status(&msg_cmd)==CAN_MSG_COMPLETED)
-		{
-			switch (msg_cmd.id)
-			{
-				case CAN_BASE_ID:
-					#if DEBUG_CAN
-					printf_P(PSTR("motor id: 0x%x"), msg_cmd.id);
-					#endif
-					break;
-
-				case CAN_MOTOR_START:
-					#if DEBUG_CAN
-					printf_P(PSTR("motor run"));
-					#endif
-					mc_run(1);
-					break;
-
-				case CAN_MOTOR_STOP:
-					#if DEBUG_CAN
-					printf_P(PSTR("motor stop"));
-					#endif
-					mc_run(0);
-					break;
-
-				case CAN_MOTOR_COAST:
-					#if DEBUG_CAN
-					printf_P(PSTR("motor coast"));
-					#endif
-					mc_coast();
-					break;
-			}
-			#if DEBUG_CAN
-			printf_P(PSTR("\n\r"));
-			#endif
-		}else{
-			can_msg_abort(&msg_cmd);
-		}
-
-		while(can_msg_rx(&msg_position,0)!=CAN_MSG_ACCEPTED);
-		_delay_ms(1);
-		if(can_msg_status(&msg_position)==CAN_MSG_COMPLETED)
-		{
-			angle	=	((int16_t)(msg_position.data[1])<<8) + (int16_t)(msg_position.data[0]);
-			mc_angle_set(angle);
-			#if DEBUG_CAN
-			printf_P(PSTR("motor angle set: %d\n\r"),angle);
-			#endif
-		}else{
-			can_msg_abort(&msg_position);
-		}
-
-	}
-	*/
-
+	
 	while(1)
 	{
 		msg_cmd.id			=	CAN_BASE_ID;
@@ -212,23 +139,24 @@ int main(void)
 				angle	=	((int16_t)(msg_cmd.data[1])<<8) + (int16_t)(msg_cmd.data[0]);
 				mc_rev_set(angle);
 				#if DEBUG_CAN
-				printf_P(PSTR("motor angle set: %d"),angle);
+				printf_P(PSTR("motor angle set: %drev"),angle);
 				#endif
 				break;
-
-			case CAN_MOTOR_RESERVED2:
-				break;
-
-			case CAN_MOTOR_RESERVED3:
-				break;
-
-			case CAN_MOTOR_RESERVED4:
-				break;
-
-			case CAN_MOTOR_RESERVED5:
-				break;
-
-			case CAN_MOTOR_RESERVED6:
+				
+			case CAN_MOTOR_ANGLE_GET:
+				msg_response.id=msg_cmd.id;
+				msg_response.mask=0xffffffff;
+				msg_response.ide=0;
+				msg_response.rtr=0;
+				msg_response.dlc=2;
+				angle = mc_rev_get();
+				msg_response.data[1]=(angle>>8);
+				msg_response.data[0]=(uint8_t)(angle);
+				while(can_msg_tx(&msg_response)!=CAN_MSG_ACCEPTED);
+				while(can_msg_status(&msg_response)==CAN_MSG_NOT_COMPLETED);
+				#if DEBUG_CAN
+				printf_P(PSTR("motor angle get: %drev"),angle);
+				#endif
 				break;
 
 			case CAN_MOTOR_TEMP_GET:

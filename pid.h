@@ -8,10 +8,10 @@ typedef	struct pid_data
 	double	Kd;
 	double	IntSum;
 	double	IntSumMax;
-	double	OutputLast;
+	double	FeedbackLast;
 	double	ErrorMax;
 } pid_data_t;
 
-double		pid_controller		(const double*, double*, pid_data_t*);
+double		pid_controller		(const double*, const double*, pid_data_t*);
 
 #endif /* PID_H_ */

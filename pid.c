@@ -4,14 +4,14 @@
 
 #include "pid.h"
 
-double	pid_controller(const double* input, double* output, pid_data_t* pid)
+double	pid_controller(const double* input, const double* feedback, pid_data_t* pid)
 {
 	double error;
 	double ret, tmp;
 	double p_term,i_term,d_term;
 
-	//error = input - output;
-	error = *input - *output;
+
+	error = *input - *feedback;
 
 	// P
 	if (error > pid->ErrorMax)
@@ -43,10 +43,10 @@ double	pid_controller(const double* input, double* output, pid_data_t* pid)
 	}
 
 	// D
-	d_term = pid->Kd * ( pid->OutputLast - *output);
+	d_term = pid->Kd * ( pid->FeedbackLast - *feedback);
 
-	// Save last output
-	pid->OutputLast = *output;
+	// Save last feedback
+	pid->FeedbackLast = *feedback;
 
 	// Sum it all
 	ret = (p_term + i_term + d_term);
