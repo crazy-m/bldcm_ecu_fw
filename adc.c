@@ -5,8 +5,6 @@
 
 #include "adc.h"
 
-static volatile uint16_t adc_ch8;
-
 void adc_init(void)
 {
 	#if \
@@ -26,6 +24,8 @@ void adc_init(void)
 	ADCSRB	= _BV(AREFEN) | _BV(ADTS2) | _BV(ADTS1) | _BV(ADTS0);
 
 	DIDR1 = _BV(ADC9D) | _BV(ADC8D);
+	
+	ADCSRA	|= _BV(ADSC);
 }
 
 uint16_t adc_get_channel(adc_channel_t channel)
@@ -58,13 +58,9 @@ uint16_t adc_get_channel(adc_channel_t channel)
 	return ADC;
 }
 
-uint16_t adc_get_ch8(void)
-{
-	return adc_ch8;
-}
-
+/*
 ISR(ADC_vect)
 {
-	adc_ch8	=	ADC;
-	//ADCSRA	|= _BV(ADSC);
+	// implemented in mc.c
 }
+*/

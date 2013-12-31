@@ -36,11 +36,16 @@ static volatile	double			mc_rpm_filter_last		=	0;
 static volatile	int16_t			mc_rev_ref				=	0;
 static volatile	int16_t			mc_rev_now				=	0;
 
-static			pid_data_t		pid_speed;
-static 			double			pid_speed_out			=	0;
+static volatile	double			mc_current_now			=	0;
 
 static			pid_data_t		pid_position;
 static 			double			pid_position_out		=	0;
+
+static			pid_data_t		pid_speed;
+static 			double			pid_speed_out			=	0;
+
+static			pid_data_t		pid_current;
+static 			double			pid_current_out			=	0;
 
 static			void			mc_hall_sensors_irq	(void);
 
@@ -56,7 +61,7 @@ void mc_init(void)
 	adc_init();
 	ata6844_init();
 	psc_init();
-
+	
 	// set Hall sensors pins as inputs without int. pull-ups
 	DDRD	&=	~_BV(PD7) & ~_BV(PD6) & ~_BV(PD5);
 	PORTD	&=	~_BV(PD7) & ~_BV(PD6) & ~_BV(PD5);
@@ -64,7 +69,15 @@ void mc_init(void)
 	// set PCINT for Hall sensors
 	PCICR	|=	_BV(PCIE2);
 	PCMSK2	|=	_BV(PCINT23) | _BV(PCINT22) | _BV(PCINT21);
-
+	
+	pid_position.ErrorMax	=	PID_POSITION_KP*MOTOR_MAX_SPEED;
+	pid_position.IntSumMax	=	PID_POSITION_KP*MOTOR_MAX_SPEED/(PID_POSITION_KI+1);
+	pid_position.IntSum		=	0;
+	pid_position.FeedbackLast	=	0;
+	pid_position.Kp			=	PID_POSITION_KP;
+	pid_position.Ki			=	PID_POSITION_KI;
+	pid_position.Kd			=	PID_POSITION_KD;
+	
 	pid_speed.ErrorMax		=	PID_SPEED_KP*MOTOR_MAX_SPEED;
 	pid_speed.IntSumMax		=	PID_SPEED_KP*MOTOR_MAX_SPEED/(PID_SPEED_KI+1);
 	pid_speed.IntSum		=	0;
@@ -72,14 +85,14 @@ void mc_init(void)
 	pid_speed.Kp			=	PID_SPEED_KP;
 	pid_speed.Ki			=	PID_SPEED_KI;
 	pid_speed.Kd			=	PID_SPEED_KD;
-
-	pid_position.ErrorMax	=	PID_ANGLE_KP*MOTOR_MAX_SPEED;
-	pid_position.IntSumMax	=	PID_ANGLE_KP*MOTOR_MAX_SPEED/(PID_ANGLE_KI+1);
-	pid_position.IntSum		=	0;
-	pid_position.FeedbackLast	=	0;
-	pid_position.Kp			=	PID_ANGLE_KP;
-	pid_position.Ki			=	PID_ANGLE_KI;
-	pid_position.Kd			=	PID_ANGLE_KD;
+	
+	pid_current.ErrorMax	=	MOTOR_MAX_CURRENT*1000;
+	pid_current.IntSumMax	=	PID_CURRENT_KP*MOTOR_MAX_CURRENT*1000/(PID_CURRENT_KI+1);
+	pid_current.IntSum		=	0;
+	pid_current.FeedbackLast=	0;
+	pid_current.Kp			=	PID_CURRENT_KP;
+	pid_current.Ki			=	PID_CURRENT_KI;
+	pid_current.Kd			=	PID_CURRENT_KD;
 
 	ata6844_enabled(0);
 	ata6844_coast(1);
@@ -112,6 +125,8 @@ void mc_run(uint8_t run)
 	pid_speed.FeedbackLast=0;
 	pid_position.IntSum=0;
 	pid_position.FeedbackLast=0;
+	pid_current.IntSum=0;
+	pid_current.FeedbackLast=0;
 }
 
 void mc_coast(void)
@@ -146,9 +161,7 @@ int16_t mc_rev_get(void)
 
 uint16_t mc_current_get(void)
 {
-	uint32_t current;
-	current	= ( (uint32_t)(adc_get_ch8())*MOTOR_MAX_CURRENT*1000/1023 );
-	return (uint16_t)current;
+	return (uint16_t)mc_current_now;
 }
 
 uint8_t mc_voltage_get(void)
@@ -287,8 +300,9 @@ ISR(TIMER0_COMPA_vect)
 	double		mc_rpm_tmp;
 	double		mc_rev_tmp;
 	double		mc_rev_hall;
+	double		mc_current_tmp;
 
-	mc_rpm_tmp				=	(double)(mc_hall_rpm_ticks)*3750.00/48.00;
+	mc_rpm_tmp				=	(double)(mc_hall_rpm_ticks)*3750.00/(MOTOR_NUM_POLES*6.00);
 	mc_hall_rpm_ticks		=	0;
 
 	if(mc_hall_dir==MC_DIR_CCW)
@@ -299,14 +313,14 @@ ISR(TIMER0_COMPA_vect)
 	mc_rpm_last			=	mc_rpm_tmp;
 	mc_rpm_filter_last	=	mc_rpm_filter;
 	mc_rpm_now			=	(int16_t)(mc_rpm_filter);
+	
+	mc_rev_tmp		=	(double)(mc_rev_ref)*(MOTOR_NUM_POLES*6.00);
+	mc_rev_hall		=	(double)(mc_hall_rev_ticks);
+	mc_rev_now		=	(int16_t)(mc_rev_hall/(MOTOR_NUM_POLES*6.00));
 
 	if(mc_mode==MC_MODE_POSITION)
 	{
 		// P position controller
-		mc_rev_tmp		=	(double)(mc_rev_ref)*24.00;
-		mc_rev_hall		=	(double)(mc_hall_rev_ticks);
-		mc_rev_now		=	(int16_t)(mc_rev_hall/24.00);
-
 		pid_position_out	=	pid_controller(&mc_rev_tmp, &mc_rev_hall, &pid_position);
 
 		// PI speed controller
@@ -316,7 +330,8 @@ ISR(TIMER0_COMPA_vect)
 		mc_rpm_tmp			=	(double)mc_rpm_ref;
 		pid_speed_out		=	pid_controller(&mc_rpm_tmp, &mc_rpm_filter, &pid_speed);
 	}
-
+	
+	/*
 	if(pid_speed_out<0)
 	{
 		mc_dir_now	=	MC_DIR_CCW;
@@ -324,10 +339,26 @@ ISR(TIMER0_COMPA_vect)
 	}else{
 		mc_dir_now	=	MC_DIR_CW;
 	}
-
+	
 	pid_speed_out = pid_speed_out*PSC_DUTY_MAX/MOTOR_MAX_SPEED;
-
 	psc_set_dutycycle( (int16_t)(pid_speed_out) );
+	*/
+	
+	// PI current controller
+	pid_speed_out	=	pid_speed_out*MOTOR_MAX_CURRENT*1000.00/MOTOR_MAX_SPEED;
+	mc_current_tmp	=	mc_current_now;
+	pid_current_out	=	pid_controller(&pid_speed_out, &mc_current_tmp, &pid_current);
+	
+	if(pid_current_out<0)
+	{
+		mc_dir_now	=	MC_DIR_CCW;
+		pid_current_out = -pid_current_out;
+	}else{
+		mc_dir_now	=	MC_DIR_CW;
+	}
+	
+	pid_current_out	=	pid_current_out*PSC_DUTY_MAX/(MOTOR_MAX_CURRENT*1000);
+	psc_set_dutycycle( (int16_t)(pid_current_out) );
 }
 
 /*
@@ -336,3 +367,8 @@ ISR(TIMER1_COMPA_vect)
 	//empty
 }
 */
+
+ISR(ADC_vect)
+{
+	mc_current_now	=	(double)(ADC)*MOTOR_MAX_CURRENT*1000.00/1023.00;
+}

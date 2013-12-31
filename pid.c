@@ -10,7 +10,6 @@ double	pid_controller(const double* input, const double* feedback, pid_data_t* p
 	double ret, tmp;
 	double p_term,i_term,d_term;
 
-
 	error = *input - *feedback;
 
 	// P
@@ -43,7 +42,7 @@ double	pid_controller(const double* input, const double* feedback, pid_data_t* p
 	}
 
 	// D
-	d_term = pid->Kd * ( pid->FeedbackLast - *feedback);
+	d_term = pid->Kd * (*feedback - pid->FeedbackLast);
 
 	// Save last feedback
 	pid->FeedbackLast = *feedback;

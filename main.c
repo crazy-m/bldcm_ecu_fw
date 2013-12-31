@@ -180,10 +180,6 @@ int main(void)
 		#if DEBUG_CAN
 		printf_P(PSTR("\n\r"));
 		#endif
-
-		//printf("%ld\n\r",mc_get_hall_cycles());
-		//_delay_ms(10);
-
 	}
 
 }

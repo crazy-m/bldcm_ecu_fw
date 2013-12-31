@@ -41,8 +41,9 @@ void psc_init(void)
 	POCR1SB	=	0;
 	POCR2SB	=	0;
 
+	#if !PSC_HARD_CHOPPING
 	PCNF	|=	_BV(POPB);	// PSC outputs B are active high
-
+	#endif
 	PCNF	|=	_BV(PMODE); // center aligned mode
 
 	PCTL	|=	_BV(PCLKSEL);	// set PLL as input clock, no prescalers
@@ -53,7 +54,7 @@ void psc_init(void)
 	PMIC2	|=	_BV(POVEN2);
 
 	// Send signal on match with OCRnRA (during counting up of PSC)
-	PSYNC	=	_BV(PSYNC00);
+	//PSYNC	=	_BV(PSYNC00);
 }
 
 void psc_run(uint8_t run)
@@ -72,12 +73,17 @@ void psc_set_dutycycle(int16_t dutycycle)
 	if(dutycycle<PSC_DUTY_MIN) dutycycle=PSC_DUTY_MIN;
 
 	POCR0SA	=	dutycycle;
-	POCR1SB	=	0;
-
 	POCR2SA	=	dutycycle;
-	POCR0SB	=	0;
-
 	POCR1SA	=	dutycycle;
+	#if PSC_HARD_CHOPPING
+	POCR0SB	=	dutycycle;
+	POCR1SB	=	dutycycle;
+	POCR2SB	=	dutycycle;
+	#else
+	POCR0SB	=	0;
+	POCR1SB	=	0;
 	POCR2SB	=	0;
+	#endif
+	
 }
 #endif
