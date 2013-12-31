@@ -16,6 +16,7 @@ defined(__AVR_ATmega64M1__)
 #define PSC_DUTY_MIN		0x0000
 #define PSC_DUTY_MAX		0x03FF
 #define PSC_DUTY_DEF		PSC_DUTY_MIN
+#define PSC_HARD_CHOPPING	0
 
 void	psc_init			(void);
 void	psc_run				(uint8_t run);

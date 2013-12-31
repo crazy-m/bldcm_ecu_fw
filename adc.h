@@ -26,6 +26,5 @@ typedef enum adc_channel
 
 void		adc_init			(void);
 uint16_t	adc_get_channel		(adc_channel_t channel);
-uint16_t	adc_get_ch8			(void);
 
 #endif /* ADC_H_ */
