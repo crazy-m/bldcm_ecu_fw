@@ -13,185 +13,14 @@
 #include "mc.h"
 #include "uart.h"
 
-static void board_init(void);
-
-int main(void)
-{
-	can_message_t	msg_cmd;
-	can_message_t	msg_response;
-	
-	int16_t			speed, angle;
-	uint16_t		current;
-	uint8_t			voltage;
-	int8_t			temp;
-
-	board_init();
-
-	#if DEBUG_ME
-	printf_P(PSTR("UART: 115200,8,n,1\n\r"));
-	#endif
-	
-	while(1)
-	{
-		msg_cmd.id			=	CAN_BASE_ID;
-		msg_cmd.mask		=	0x000007f0;
-		msg_cmd.ide			=	0;
-		msg_cmd.rtr			=	0;
-		msg_cmd.dlc			=	8;
-
-
-		while(can_msg_rx(&msg_cmd,0)!=CAN_MSG_ACCEPTED);
-		while(can_msg_status(&msg_cmd)==CAN_MSG_NOT_COMPLETED);
-
-		#if DEBUG_CAN
-		printf_P(PSTR("id: %ld, dlc: %d, ide: %d, rtr: %d --> "),msg_cmd.id,msg_cmd.dlc,msg_cmd.ide,msg_cmd.rtr);
-		#endif
-		switch (msg_cmd.id)
-		{
-			case CAN_BASE_ID:
-				#if DEBUG_CAN
-				printf_P(PSTR("motor id: 0x%x"), msg_cmd.id);
-				#endif
-				break;
-
-			case CAN_MOTOR_START:
-				#if DEBUG_CAN
-				printf_P(PSTR("motor run"));
-				#endif
-				mc_run(1);
-				break;
-
-			case CAN_MOTOR_STOP:
-				#if DEBUG_CAN
-				printf_P(PSTR("motor stop"));
-				#endif
-				mc_run(0);
-				break;
-
-			case CAN_MOTOR_COAST:
-				#if DEBUG_CAN
-				printf_P(PSTR("motor coast"));
-				#endif
-				mc_coast();
-				break;
-
-			case CAN_MOTOR_SPEED_SET:
-				speed	=	((int16_t)(msg_cmd.data[1])<<8) + (int16_t)(msg_cmd.data[0]);
-				mc_rpm_set(speed);
-				#if DEBUG_CAN
-				printf_P(PSTR("motor speed set: %drpm"),speed);
-				#endif
-				break;
-
-			case CAN_MOTOR_SPEED_GET:
-				msg_response.id=msg_cmd.id;
-				msg_response.mask=0xffffffff;
-				msg_response.ide=0;
-				msg_response.rtr=0;
-				msg_response.dlc=2;
-				speed = mc_rpm_get();
-				msg_response.data[1]=(speed>>8);
-				msg_response.data[0]=(uint8_t)(speed);
-				while(can_msg_tx(&msg_response)!=CAN_MSG_ACCEPTED);
-				while(can_msg_status(&msg_response)==CAN_MSG_NOT_COMPLETED);
-				#if DEBUG_CAN
-				printf_P(PSTR("motor speed get: %drpm"),speed);
-				#endif
-				break;
-
-			case CAN_MOTOR_CURRENT_GET:
-				msg_response.id=msg_cmd.id;
-				msg_response.mask=0xffffffff;
-				msg_response.ide=0;
-				msg_response.rtr=0;
-				msg_response.dlc=2;
-				current	= mc_current_get();
-				//msg_respone.data[3]=(uint8_t)(current>>24);
-				//msg_respone.data[2]=(uint8_t)(current>>16);
-				msg_response.data[1]=(uint8_t)(current>>8);
-				msg_response.data[0]=(uint8_t)(current);
-				while(can_msg_tx(&msg_response)!=CAN_MSG_ACCEPTED);
-				while(can_msg_status(&msg_response)==CAN_MSG_NOT_COMPLETED);
-				#if DEBUG_CAN
-				printf_P(PSTR("motor current sent: %4.2fmA"),(double)current);
-				#endif
-				break;
-
-			case CAN_MOTOR_VOLTAGE_GET:
-				msg_response.id=msg_cmd.id;
-				msg_response.mask=0xffffffff;
-				msg_response.ide=0;
-				msg_response.rtr=0;
-				msg_response.dlc=1;
-				voltage	= mc_voltage_get();
-				//msg_respone.data[3]=(uint8_t)(voltage>>24);
-				//msg_respone.data[2]=(uint8_t)(voltage>>16);
-				//msg_respone.data[1]=(uint8_t)(voltage>>8);
-				msg_response.data[0]=voltage;
-				while(can_msg_tx(&msg_response)!=CAN_MSG_ACCEPTED);
-				while(can_msg_status(&msg_response)==CAN_MSG_NOT_COMPLETED);
-				#if DEBUG_CAN
-				printf_P(PSTR("motor voltage sent: %4.2fV"),(double)voltage);
-				#endif
-				break;
-
-			case CAN_MOTOR_ANGLE_SET:
-				angle	=	((int16_t)(msg_cmd.data[1])<<8) + (int16_t)(msg_cmd.data[0]);
-				mc_rev_set(angle);
-				#if DEBUG_CAN
-				printf_P(PSTR("motor angle set: %drev"),angle);
-				#endif
-				break;
-				
-			case CAN_MOTOR_ANGLE_GET:
-				msg_response.id=msg_cmd.id;
-				msg_response.mask=0xffffffff;
-				msg_response.ide=0;
-				msg_response.rtr=0;
-				msg_response.dlc=2;
-				angle = mc_rev_get();
-				msg_response.data[1]=(angle>>8);
-				msg_response.data[0]=(uint8_t)(angle);
-				while(can_msg_tx(&msg_response)!=CAN_MSG_ACCEPTED);
-				while(can_msg_status(&msg_response)==CAN_MSG_NOT_COMPLETED);
-				#if DEBUG_CAN
-				printf_P(PSTR("motor angle get: %drev"),angle);
-				#endif
-				break;
-
-			case CAN_MOTOR_TEMP_GET:
-				msg_response.id=msg_cmd.id;
-				msg_response.mask=0xffffffff;
-				msg_response.ide=0;
-				msg_response.rtr=0;
-				msg_response.dlc=1;
-				temp	= mc_temp_get();
-				msg_response.data[0]=temp;
-				while(can_msg_tx(&msg_response)!=CAN_MSG_ACCEPTED);
-				while(can_msg_status(&msg_response)==CAN_MSG_NOT_COMPLETED);
-				#if DEBUG_CAN
-				printf_P(PSTR("motor temp out: %d"), temp);
-				#endif
-				break;
-
-			default:
-				break;
-		}
-		#if DEBUG_CAN
-		printf_P(PSTR("\n\r"));
-		#endif
-	}
-
-}
-
-static void board_init(void)
+static void _board_init(void)
 {
 	#if \
-		defined(__AVR_ATmega32C1__)  || \
-		defined(__AVR_ATmega64C1__)  || \
-		defined(__AVR_ATmega16M1__)  || \
-		defined(__AVR_ATmega32M1__)  || \
-		defined(__AVR_ATmega64M1__)
+	defined(__AVR_ATmega32C1__)  || \
+	defined(__AVR_ATmega64C1__)  || \
+	defined(__AVR_ATmega16M1__)  || \
+	defined(__AVR_ATmega32M1__)  || \
+	defined(__AVR_ATmega64M1__)
 	power_all_disable();
 
 	DDRB = 0x00;
@@ -203,12 +32,147 @@ static void board_init(void)
 	PORTD = 0xFF;
 	#endif
 
-	can_init(CAN_BITRATE_250);
-	mc_init();
 	#if DEBUG_ME
-	uart_init(UART_BAUDRATE_115200);
+	uart_init(UART_BAUDRATE);
 	#endif
+	mc_init();
+	can_init(CAN_BAUDRATE);
 
 	//enable interrupts
 	sei();
 }
+
+int main(void)
+{
+	can_message_t	cmd_set_msg;
+	can_message_t	cmd_get_msg;
+	can_message_t	cmd_resp_msg;
+	uint8_t	cmd_set_data[3];
+	uint8_t	cmd_get_data[8];
+	
+	int16_t revs, rpms, current;
+	
+	_board_init();
+	
+	#if DEBUG_ME
+	printf_P(PSTR("Debug: UART->115200,8,n,1\n\r"));
+	#endif
+	
+	cmd_set_msg.id		=	CAN_CMD_SET;
+	cmd_set_msg.mask	=	0x000007ff;
+	cmd_set_msg.ide		=	0;
+	cmd_set_msg.rtr		=	0;
+	cmd_set_msg.dlc		=	3;
+	cmd_set_msg.pt_data	=	&cmd_set_data[0];
+	
+	cmd_get_msg.id		=	CAN_CMD_GET;
+	cmd_get_msg.mask	=	0x000007ff;
+	cmd_get_msg.ide		=	0;
+	cmd_get_msg.rtr		=	1;
+	cmd_get_msg.dlc		=	0;
+	
+	can_msg_rx(&cmd_set_msg);
+	can_msg_rx(&cmd_get_msg);
+	
+	while(1)
+	{
+		switch(cmd_set_msg.status)
+		{
+			case CAN_MSG_COMPLETED:
+				switch(cmd_set_data[0])
+				{
+					case CMD_MOTOR_STOP:
+						mc_run(0);
+						#if DEBUG_CAN
+						printf_P(PSTR("motor stop"));
+						#endif
+						break;
+					case CMD_MOTOR_START:
+						mc_run(1);
+						#if DEBUG_CAN
+						printf_P(PSTR("motor start"));
+						#endif
+						break;
+					case CMD_MOTOR_COAST:
+						mc_coast();
+						#if DEBUG_CAN
+						printf_P(PSTR("motor coast"));
+						#endif
+						break;
+					case CMD_MOTOR_BREAK:
+						#if DEBUG_CAN
+						printf_P(PSTR("motor break"));
+						#endif
+						break;
+					case CMD_REV_SET:
+						revs = ((int16_t)(cmd_set_data[2])<<8) + (int16_t)(cmd_set_data[1]);
+						mc_rev_set(revs);
+						#if DEBUG_CAN
+						printf_P(PSTR("motor rev set: %d"),revs);
+						#endif
+						break;
+					case CMD_RPM_SET:
+						rpms = ((int16_t)(cmd_set_data[2])<<8) + (int16_t)(cmd_set_data[1]);
+						mc_rpm_set(rpms);
+						#if DEBUG_CAN
+						printf_P(PSTR("motor rpm set: %d"),rpms);
+						#endif
+						break;
+						
+					default:
+						#if DEBUG_CAN
+						printf_P(PSTR("unknown cmd"));
+						#endif
+						break;
+				}
+				#if DEBUG_CAN
+				printf_P(PSTR("\n\r"));
+				#endif
+				cmd_set_msg.status = CAN_MSG_PENDING;
+				break;
+			
+			case CAN_MSG_ERROR:
+				can_msg_rx(&cmd_set_msg);
+				break;
+		}
+		
+		switch(cmd_get_msg.status)
+		{
+			case CAN_MSG_COMPLETED:
+				revs	=	mc_rev_get();
+				rpms	=	mc_rpm_get();
+				current	=	mc_current_get();
+				
+				cmd_get_data[0]		=	(uint8_t)(revs);
+				cmd_get_data[1]		=	(uint8_t)(revs>>8);
+				cmd_get_data[2]		=	(uint8_t)(rpms);
+				cmd_get_data[3]		=	(uint8_t)(rpms>>8);
+				cmd_get_data[4]		=	(uint8_t)(current);
+				cmd_get_data[5]		=	(uint8_t)(current>>8);
+				cmd_get_data[6]		=	0;
+				cmd_get_data[7]		=	0;
+				
+				cmd_resp_msg.id		=	CAN_CMD_GET;
+				cmd_resp_msg.mask	=	0x000007ff;
+				cmd_resp_msg.ide	=	0;
+				cmd_resp_msg.rtr	=	0;
+				cmd_resp_msg.dlc	=	8;
+				cmd_resp_msg.pt_data=	&cmd_get_data[0];
+				
+				can_msg_tx(&cmd_resp_msg);
+				//_delay_us(5);
+				#if DEBUG_CAN
+				printf_P(PSTR("get data\n\r"));
+				#endif
+				cmd_get_msg.status = CAN_MSG_PENDING;
+				break;
+			
+			case CAN_MSG_ERROR:
+				can_msg_rx(&cmd_get_msg);
+				break;
+		}
+		_delay_us(5);
+	}	
+}
+
+
